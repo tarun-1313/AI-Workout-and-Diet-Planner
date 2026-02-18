@@ -1,17 +1,23 @@
+import os
 import streamlit as st
 import google.generativeai as genai
 from loguru import logger
 
-# ================= LOAD ENV ================= #
+# ================= LOAD API KEY ================= #
 
-GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
+# Works in Streamlit Cloud + local
+try:
+    GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
+except Exception:
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 if not GEMINI_API_KEY:
-    raise ValueError("GEMINI_API_KEY not found in Streamlit secrets.")
+    raise ValueError("GEMINI_API_KEY not found.")
 
+# Configure Gemini
 genai.configure(api_key=GEMINI_API_KEY)
 
-# ⭐ FREE MODEL
+# ⭐ SAFE FREE MODEL (recommended)
 MODEL_NAME = "gemini-3-flash-preview"
 
 suggestion_model = genai.GenerativeModel(MODEL_NAME)
@@ -22,23 +28,23 @@ chatbot_model = genai.GenerativeModel(MODEL_NAME)
 def _generate_prompt_for_suggestions(user_data, prediction):
 
     return f"""
-    You are a friendly AI fitness coach.
+You are a friendly AI fitness coach.
 
-    User info:
-    Age: {user_data.get("age")}
-    Weight: {user_data.get("weight_kg")}
-    Height: {user_data.get("height_cm")}
-    Goal: {user_data.get("goal")}
-    Prediction: {prediction}
+User info:
+Age: {user_data.get("age")}
+Weight: {user_data.get("weight_kg")}
+Height: {user_data.get("height_cm")}
+Goal: {user_data.get("goal")}
+Prediction: {prediction}
 
-    Give:
-    1. Workout tips
-    2. Diet suggestions
-    3. Recovery advice
-    4. Motivational message
+Give:
+1. Workout tips
+2. Diet suggestions
+3. Recovery advice
+4. Motivational message
 
-    Keep it simple and safe.
-    """
+Keep it simple and safe.
+"""
 
 
 # ================= AI SUGGESTIONS ================= #
@@ -64,7 +70,7 @@ def chat_with_ai(user_message, chat_history):
 
     try:
 
-        # ⭐ CONVERT STREAMLIT HISTORY → GEMINI FORMAT
+        # Convert Streamlit chat history -> Gemini format
         gemini_history = []
 
         for msg in chat_history:
@@ -73,7 +79,6 @@ def chat_with_ai(user_message, chat_history):
                 "parts": [{"text": msg.get("content", "")}]
             })
 
-        # start chat with converted history
         chat = chatbot_model.start_chat(history=gemini_history)
 
         response = chat.send_message(user_message)
