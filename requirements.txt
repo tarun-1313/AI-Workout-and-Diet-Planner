@@ -1,23 +1,14 @@
-streamlit
-pandas
-numpy
-scikit-learn
-tensorflow # For LSTM
-xgboost
 fastapi
 uvicorn
-python-multipart
+tensorflow
+xgboost
+scikit-learn
+numpy
+pandas
+pydantic
+loguru
+joblib
+python-dotenv
+google-generativeai
 PyYAML
-plotly
-dvc # For data versioning (optional, but good for MLOps)
-boto3 # If using S3 for data/model storage (optional)
-pre-commit # For code quality (optional)
-black # For code formatting (optional)
-isort # For import sorting (optional)
-flake8 # For linting (optional)
-mypy # For type checking (optional)
-pydantic # For data validation in FastAPI
-loguru # For logging
-joblib # For model saving/loading
-python-dotenv # For environment variables
-google-generativeai # For Google Gemini API integration
+python-multipart
