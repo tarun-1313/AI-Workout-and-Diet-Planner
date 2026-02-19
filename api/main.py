@@ -1,10 +1,11 @@
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import uvicorn
 import yaml
 import os
 import numpy as np
 from loguru import logger
+from typing import List
 
 from src.model_serving.model_server import ModelServer
 from src.gemini_integration.gemini_service import (
@@ -21,18 +22,17 @@ app = FastAPI(
 
 # ================= REQUEST MODELS ================= #
 class PredictionRequest(BaseModel):
-    user_data: list[float]      # [age, weight, height]
-    workout_data: list[float]   # [duration, intensity]
+    user_data: List[float] = Field(..., example=[25, 70, 170])
+    workout_data: List[float] = Field(..., example=[45, 1])
 
 
 class ChatRequest(BaseModel):
     user_message: str
-    chat_history: list = []
+    chat_history: List[dict] = Field(default_factory=list)
 
 
 # ================= LOAD CONFIG ================= #
 def load_config(config_path="config.yaml"):
-
     script_dir = os.path.dirname(__file__)
     base_dir = os.path.abspath(os.path.join(script_dir, ".."))
     config_full_path = os.path.join(base_dir, config_path)
@@ -51,7 +51,6 @@ model_server_instance = None
 @app.on_event("startup")
 async def startup_event():
     global model_server_instance
-
     logger.info("Initializing ModelServer...")
     model_server_instance = ModelServer()
     logger.info("Models loaded successfully.")
@@ -79,20 +78,32 @@ async def predict(request: PredictionRequest):
 
     try:
 
-        # -------- BASIC INPUT -------- #
-        age = request.user_data[0]
-        weight = request.user_data[1]
-        height = request.user_data[2]
+        # -------- VALIDATION -------- #
+        if len(request.user_data) != 3:
+            raise HTTPException(
+                status_code=400,
+                detail="user_data must contain exactly 3 values: [age, weight, height]"
+            )
 
-        workout_duration = request.workout_data[0]
-        workout_intensity = request.workout_data[1]
+        if len(request.workout_data) != 2:
+            raise HTTPException(
+                status_code=400,
+                detail="workout_data must contain exactly 2 values: [duration, intensity]"
+            )
 
-        # -------- BUILD FULL LSTM FEATURES (8) -------- #
+        age, weight, height = request.user_data
+        workout_duration, workout_intensity = request.workout_data
+
+        # -------- SAFE BMI -------- #
+        if height <= 0:
+            raise HTTPException(status_code=400, detail="Height must be greater than 0")
+
         bmi = weight / ((height / 100) ** 2)
 
-        activity_level = 1      # default
-        calorie_intake = 2000   # default
-        goal = 1                # default
+        # -------- DEFAULT FEATURES -------- #
+        activity_level = 1
+        calorie_intake = 2000
+        goal = 1
         intensity = workout_intensity
 
         lstm_features = [
@@ -106,13 +117,12 @@ async def predict(request: PredictionRequest):
             intensity
         ]
 
-        # -------- XGBOOST FEATURES -------- #
         xgb_features = [
-           workout_duration,
-           workout_intensity,
-           bmi,
-           activity_level,
-           goal
+            workout_duration,
+            workout_intensity,
+            bmi,
+            activity_level,
+            goal
         ]
 
         # -------- MODEL INPUT SHAPES -------- #
@@ -128,6 +138,8 @@ async def predict(request: PredictionRequest):
             }
         )
 
+        prediction_value = float(prediction[0])
+
         # -------- GEMINI SUGGESTIONS -------- #
         try:
             ai_suggestions = generate_ai_suggestions(
@@ -137,14 +149,14 @@ async def predict(request: PredictionRequest):
                     "height_cm": height,
                     "goal": "fitness"
                 },
-                {"prediction": float(prediction[0])}
+                {"prediction": prediction_value}
             )
         except Exception as e:
             logger.error(f"Gemini suggestion failed: {e}")
             ai_suggestions = "AI suggestions currently unavailable."
 
         return {
-            "prediction": [float(prediction[0])],
+            "prediction": [prediction_value],
             "workout_plan": [
                 "Pushups - 3 sets",
                 "Squats - 3 sets",
@@ -158,9 +170,12 @@ async def predict(request: PredictionRequest):
             "ai_suggestions": ai_suggestions
         }
 
+    except HTTPException:
+        raise
+
     except Exception as e:
         logger.exception(f"Prediction failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ================= CHATBOT ================= #
@@ -176,7 +191,7 @@ async def chat(request: ChatRequest):
 
     except Exception as e:
         logger.exception(f"Chat failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ================= MAIN ================= #
